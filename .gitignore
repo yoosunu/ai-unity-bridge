@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+
+# YOLO model
+python_bridge/models/
+
+# Test images
+python_bridge/test_images/
+
+# Python virtual environment
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+UserSettings/
+MemoryCaptures/
+
+*.csproj
+*.unityproj
+*.sln
+*.user
+*.pidb
+*.booproj
