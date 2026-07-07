@@ -4,7 +4,7 @@ import time
 from ultralytics import YOLO
 
 HOST = "127.0.0.1"
-PORT = 5000
+PORT = 5002
 
 MODEL_PATH = "models/yolo26n.pt"
 IMAGE_PATH = "test_images/test.jpg"
@@ -44,13 +44,15 @@ while True:
         # 임시 거리 추정: bbox가 클수록 가까운 것으로 가정
         unity_z = round(max(1.0, 8.0 - (box_height / 320.0) * 7.0), 2)
 
-        detections.append({
-            "id": i + 1,
-            "label": label,
-            "confidence": round(conf, 3),
-            "x": unity_x,
-            "z": unity_z
-        })
+        detections.append(
+            {
+                "id": i + 1,
+                "label": label,
+                "confidence": round(conf, 3),
+                "x": unity_x,
+                "z": unity_z,
+            }
+        )
 
     message = json.dumps({"objects": detections}) + "\n"
     conn.sendall(message.encode("utf-8"))

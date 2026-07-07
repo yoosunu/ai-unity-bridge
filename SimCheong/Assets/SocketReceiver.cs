@@ -1,130 +1,99 @@
 using System;
-using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Sockets;
 using System.Threading;
 using UnityEngine;
 
-[Serializable]
-public class DetectionData
-{
-    public int id;
-    public string label;
-    public float x;
-    public float z;
-}
-
-[Serializable]
-public class DetectionPacket
-{
-    public DetectionData[] objects;
-}
-
+/// <summary>
+/// TCP 소켓 연결과 원시 문자열 수신만 담당
+/// </summary>
 public class SocketReceiver : MonoBehaviour
 {
-    public GameObject carPrefab;
+    [Header("Connection Settings")]
+    [SerializeField] private string host = "127.0.0.1";
+    [SerializeField] private int port = 5002;
 
     private TcpClient client;
     private StreamReader reader;
     private Thread receiveThread;
+    private volatile bool isRunning;
+    private volatile bool isCleanedUp; // 중복 정리 방지 가드
 
-    private readonly object lockObject = new object();
-    private DetectionPacket latestPacket;
-
-    private Dictionary<int, GameObject> spawnedObjects = new Dictionary<int, GameObject>();
+    private readonly ConcurrentQueue<string> messageQueue = new ConcurrentQueue<string>();
 
     void Start()
     {
-        receiveThread = new Thread(ConnectToServer);
+        isRunning = true;
+        receiveThread = new Thread(ConnectAndListen);
         receiveThread.IsBackground = true;
         receiveThread.Start();
-
-        Debug.Log("SocketReceiver started.");
     }
 
-    private void ConnectToServer()
+    private void ConnectAndListen()
     {
         try
         {
-            client = new TcpClient("127.0.0.1", 5000);
+            client = new TcpClient(host, port);
             reader = new StreamReader(client.GetStream());
+            Debug.Log($"[SocketReceiver] Connected to {host}:{port}");
 
-            Debug.Log("Connected to Python server.");
-
-            while (true)
+            while (isRunning)
             {
-                string message = reader.ReadLine();
+                string line = reader.ReadLine();
 
-                if (!string.IsNullOrEmpty(message))
+                if (!string.IsNullOrEmpty(line))
                 {
-                    DetectionPacket packet = JsonUtility.FromJson<DetectionPacket>(message);
-
-                    lock (lockObject)
-                    {
-                        latestPacket = packet;
-                    }
+                    messageQueue.Enqueue(line);
+                }
+                else if (line == null)
+                {
+                    break; // 서버가 연결을 닫음
                 }
             }
         }
         catch (Exception e)
         {
-            Debug.LogError("Socket error: " + e.Message);
+            // Close()에 의해 강제로 깨어난 경우도 여기로 들어오며, 정상 종료 경로.
+            Debug.Log($"[SocketReceiver] Receive loop ended: {e.Message}");
         }
     }
 
-    void Update()
+    public bool TryDequeueMessage(out string message)
     {
-        DetectionPacket packet = null;
+        return messageQueue.TryDequeue(out message);
+    }
 
-        lock (lockObject)
-        {
-            packet = latestPacket;
-        }
-
-        if (packet == null || packet.objects == null)
+    /// <summary>
+    /// 실제 자원 정리. OnDestroy / OnApplicationQuit 양쪽에서 호출되어도
+    /// 한 번만 실행되도록 가드
+    /// </summary>
+    private void Cleanup()
+    {
+        if (isCleanedUp)
         {
             return;
         }
+        isCleanedUp = true;
 
-        foreach (DetectionData detection in packet.objects)
-        {
-            if (!spawnedObjects.ContainsKey(detection.id))
-            {
-                GameObject prefab = GetPrefabByLabel(detection.label);
+        isRunning = false;
 
-                if (prefab == null)
-                {
-                    Debug.LogWarning("No prefab for label: " + detection.label);
-                    continue;
-                }
+        // Close()가 블로킹 중인 ReadLine()을 깨워 스레드가 스스로 빠져나가게 한다.
+        reader?.Close();
+        client?.Close();
 
-                GameObject newObject = Instantiate(prefab);
-                newObject.name = detection.label + "_" + detection.id;
+        receiveThread?.Join(200);
 
-                spawnedObjects.Add(detection.id, newObject);
-            }
-
-            GameObject target = spawnedObjects[detection.id];
-            target.transform.position = new Vector3(detection.x, 0, detection.z);
-        }
+        Debug.Log("[SocketReceiver] Cleaned up.");
     }
 
-    private GameObject GetPrefabByLabel(string label)
+    void OnDestroy()
     {
-        label = label.ToLower();
-
-        if (label == "car")
-        {
-            return carPrefab;
-        }
-
-        return null;
+        Cleanup();
     }
 
     void OnApplicationQuit()
     {
-        receiveThread?.Abort();
-        reader?.Close();
-        client?.Close();
+        Cleanup();
     }
 }

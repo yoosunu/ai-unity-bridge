@@ -30,4 +30,13 @@ MemoryCaptures/
 *.sln
 *.user
 *.pidb
-*.booproj
+*.booproj# Test videos
+python_bridge/test_videos/
+*.mp4
+*.MP4
+# macOS AppleDouble files (exFAT 등에서 자동 생성)
+._*
+python_bridge/test_videos/
+*.mp4
+*.MP4
+._*

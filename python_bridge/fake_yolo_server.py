@@ -4,7 +4,7 @@ import math
 import time
 
 HOST = "127.0.0.1"
-PORT = 5000
+PORT = 5001
 
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind((HOST, PORT))
@@ -23,14 +23,14 @@ while True:
             "id": 1,
             "label": "car",
             "x": round(math.sin(t) * 3, 2),
-            "z": round(math.cos(t) * 3, 2)
+            "z": round(math.cos(t) * 3, 2),
         },
         {
             "id": 2,
             "label": "car",
             "x": round(math.sin(t + 2) * 4, 2),
-            "z": round(math.cos(t + 2) * 4, 2)
-        }
+            "z": round(math.cos(t + 2) * 4, 2),
+        },
     ]
 
     message = json.dumps({"objects": detections}) + "\n"
