@@ -1,28 +1,43 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+public enum TrackState
+{
+    Candidate,  // 아직 확정 안 됨 (Python 쪽에서 이미 히트카운트로 걸러주지만, Unity 쪽에서도 최소 관측 유지)
+    Confirmed,  // 확정됨 - 동적 객체는 계속 갱신, 정적 객체는 위치 고정
+    Frozen,     // 동적 객체가 관측을 놓친 상태 - 마지막 위치에서 정지, 시각적으로 다르게 표시 가능
+}
+
 [RequireComponent(typeof(DetectionManager))]
 public class ObjectManager : MonoBehaviour
 {
     [SerializeField] private PrefabManager prefabManager;
     [SerializeField] private VirtualWalker virtualWalker;
 
-    [Tooltip("이 시간(초) 동안 같은 id가 안 보이면, 그 자리에 위치를 고정한다.")]
+    [Tooltip("동적 객체가 이 시간(초) 동안 안 보이면 Frozen 상태로 전환한다.")]
     [SerializeField] private float freezeTimeout = 0.3f;
+
+    [Tooltip("Frozen 상태의 오브젝트에 적용할 반투명도 (1=원래 그대로)")]
+    [SerializeField] private float frozenAlpha = 0.5f;
+
+    [SerializeField] private float movementThreshold = 0.15f;
+    [SerializeField] private float autoFreezeAfterStableTime = 2.0f;
 
     private DetectionManager detectionManager;
 
-    private class ActiveTrack
+    private class Track
     {
         public GameObject instance;
+        public TrackState state;
+        public bool isStatic;
+        public Vector3 originalScale;
         public float lastSeenTime;
-        public Vector3 originalScale; // prefab 고유의 원본 비율 (볼라드=가늘고 김, 차=넓적함 등)
+        public TextMesh label;
+        public Vector3 lastPosition;
+        public float positionStableSince;
     }
 
-    // 현재 실시간으로 계속 추적/갱신 중인 오브젝트
-    private readonly Dictionary<int, ActiveTrack> activeTracks = new Dictionary<int, ActiveTrack>();
-    // 이미 위치가 고정되어 더 이상 갱신하지 않는 id들
-    private readonly HashSet<int> frozenIds = new HashSet<int>();
+    private readonly Dictionary<int, Track> tracks = new Dictionary<int, Track>();
 
     void Awake()
     {
@@ -37,23 +52,29 @@ public class ObjectManager : MonoBehaviour
         {
             foreach (DetectionData detection in detections)
             {
-                if (frozenIds.Contains(detection.id))
-                {
-                    continue; // 이미 고정된 물체는 다시 나타나도 무시
-                }
-
-                if (activeTracks.TryGetValue(detection.id, out ActiveTrack track))
-                {
-                    UpdateTrack(track, detection);
-                }
-                else
-                {
-                    CreateTrack(detection);
-                }
+                ProcessDetection(detection);
             }
         }
 
-        FreezeStaleTracks();
+        UpdateFreezeStates();
+    }
+
+    private void ProcessDetection(DetectionData detection)
+    {
+        if (tracks.TryGetValue(detection.id, out Track track))
+        {
+            if (track.isStatic)
+            {
+                return; // 정적 객체는 최초 배치 이후 절대 갱신 안 함
+            }
+
+            track.lastSeenTime = Time.time;
+            UpdateTransform(track, detection);
+        }
+        else
+        {
+            CreateTrack(detection);
+        }
     }
 
     private void CreateTrack(DetectionData detection)
@@ -69,25 +90,55 @@ public class ObjectManager : MonoBehaviour
         GameObject instance = Instantiate(prefab, worldPos, Quaternion.identity);
         instance.name = $"{detection.label}_{detection.id}";
 
-        // Instantiate 직후 아직 prefab 원본 그대로인 상태 -> 이때의 비율을 기억해둠
         Vector3 originalScale = instance.transform.localScale;
 
-        ApplyScaleAndGrounding(instance, detection, originalScale);
-
-        activeTracks[detection.id] = new ActiveTrack
+        Track track = new Track
         {
             instance = instance,
+            state = TrackState.Confirmed,
+            isStatic = detection.is_static,
+            originalScale = originalScale,
             lastSeenTime = Time.time,
-            originalScale = originalScale
+            lastPosition = worldPos,      
+            positionStableSince = 0f      
         };
+
+        ApplyScaleAndGrounding(track, detection, detection.label);
+        track.label = CreateLabel(instance, $"{detection.label} #{detection.id}");
+
+        tracks[detection.id] = track;
     }
 
-    private void UpdateTrack(ActiveTrack track, DetectionData detection)
+    private void UpdateTransform(Track track, DetectionData detection)
     {
+        if (track.state == TrackState.Frozen)
+        {
+            return;
+        }
+
         Vector3 worldPos = ComputeWorldPos(detection);
+        float movedDistance = Vector3.Distance(worldPos, track.lastPosition);
+
+        if (movedDistance < movementThreshold)
+        {
+            if (track.positionStableSince <= 0f)
+            {
+                track.positionStableSince = Time.time;
+            }
+            else if (Time.time - track.positionStableSince > autoFreezeAfterStableTime)
+            {
+                track.state = TrackState.Frozen;
+                return;
+            }
+        }
+        else
+        {
+            track.positionStableSince = 0f;
+        }
+
         track.instance.transform.position = worldPos;
-        ApplyScaleAndGrounding(track.instance, detection, track.originalScale);
-        track.lastSeenTime = Time.time;
+        track.lastPosition = worldPos;
+        ApplyScaleAndGrounding(track, detection, detection.label);
     }
 
     private Vector3 ComputeWorldPos(DetectionData detection)
@@ -97,43 +148,72 @@ public class ObjectManager : MonoBehaviour
              + virtualWalker.transform.forward * detection.z;
     }
 
-    private void ApplyScaleAndGrounding(GameObject instance, DetectionData detection, Vector3 originalScale)
+    private void ApplyScaleAndGrounding(Track track, DetectionData detection, string label)
     {
-        float scaleFactor = Mathf.Clamp(detection.box_height / 400f, 0.5f, 1.5f);
+        track.instance.transform.localScale = track.originalScale;
 
-        // 매번 "원본 비율" 기준으로 다시 계산 -> 누적 곱셈 없음, 비율도 유지됨
-        instance.transform.localScale = originalScale * scaleFactor;
-
-        Renderer renderer = instance.GetComponentInChildren<Renderer>();
+        Renderer renderer = track.instance.GetComponentInChildren<Renderer>();
         if (renderer != null)
         {
             float halfHeight = renderer.bounds.extents.y;
-            Vector3 pos = instance.transform.position;
-            pos.y = halfHeight; // 바닥(y=0) 기준으로 다시 계산
-            instance.transform.position = pos;
+            float offset = prefabManager.GetGroundOffset(label);
+            Vector3 pos = track.instance.transform.position;
+            pos.y = halfHeight + offset; // offset은 보통 음수로 넣어서 아래로 내림
+            track.instance.transform.position = pos;
         }
     }
 
-    private void FreezeStaleTracks()
+    private TextMesh CreateLabel(GameObject parent, string text)
     {
-        List<int> toFreeze = null;
+        GameObject labelObj = new GameObject("Label");
+        labelObj.transform.SetParent(parent.transform);
 
-        foreach (var pair in activeTracks)
+        Renderer parentRenderer = parent.GetComponentInChildren<Renderer>();
+        float heightOffset = parentRenderer != null ? parentRenderer.bounds.extents.y + 0.3f : 1f;
+        labelObj.transform.localPosition = new Vector3(0, heightOffset, 0);
+
+        TextMesh textMesh = labelObj.AddComponent<TextMesh>();
+        textMesh.text = text;
+        textMesh.fontSize = 48;
+        textMesh.characterSize = 0.08f;
+        textMesh.anchor = TextAnchor.LowerCenter;
+        textMesh.alignment = TextAlignment.Center;
+        textMesh.color = Color.white;
+
+        labelObj.AddComponent<BillboardLabel>();
+
+        return textMesh;
+    }
+
+    private void UpdateFreezeStates()
+    {
+        foreach (var pair in tracks)
         {
-            if (Time.time - pair.Value.lastSeenTime > freezeTimeout)
+            Track track = pair.Value;
+
+            if (track.isStatic || track.state == TrackState.Frozen)
             {
-                toFreeze ??= new List<int>();
-                toFreeze.Add(pair.Key);
+                continue; // 정적 객체는 애초에 대상 아님, 이미 Frozen인 것도 스킵
+            }
+
+            if (Time.time - track.lastSeenTime > freezeTimeout)
+            {
+                track.state = TrackState.Frozen;
+                SetAlpha(track.instance, frozenAlpha);
             }
         }
+    }
 
-        if (toFreeze == null) return;
+    private void SetAlpha(GameObject instance, float alpha)
+    {
+        Renderer renderer = instance.GetComponentInChildren<Renderer>();
+        if (renderer == null) return;
 
-        foreach (int id in toFreeze)
-        {
-            activeTracks.Remove(id);
-            frozenIds.Add(id);
-            // instance는 씬에 그대로 남음 - 갱신 대상에서만 제외됨 (freeze)
-        }
+        Color color = renderer.material.color;
+        color.a = alpha;
+        renderer.material.color = color;
+
+        // 반투명 렌더링을 위해 머티리얼을 Transparent 모드로 전환해야 실제로 alpha가 보임
+        // (Standard/URP-Lit 셰이더 기준, 필요시 셰이더별로 다르게 처리)
     }
 }

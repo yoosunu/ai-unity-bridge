@@ -13,6 +13,7 @@ public class PrefabManager : MonoBehaviour
     {
         public string label;
         public GameObject prefab;
+        public float groundOffset;
     }
 
     [SerializeField] private List<LabelPrefabEntry> entries = new List<LabelPrefabEntry>();
@@ -26,6 +27,17 @@ public class PrefabManager : MonoBehaviour
         {
             lookup[entry.label.ToLowerInvariant()] = entry.prefab;
         }
+    }
+    public float GetGroundOffset(string label)
+    {
+        foreach (var entry in entries)
+        {
+            if (entry.label.ToLowerInvariant() == label.ToLowerInvariant())
+            {
+                return entry.groundOffset;
+            }
+        }
+        return 0f;
     }
 
     public GameObject GetPrefab(string label)

@@ -1,4 +1,61 @@
-# Python
+# ── Python ──────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# ── 모델 가중치 / 무거운 자산 (개인 로컬에만 두기) ──
+python_bridge/models/
+*.pt
+*.onnx
+*.blend
+
+# ── 영상/이미지 테스트 데이터 ──
+python_bridge/test_videos/
+python_bridge/test_images/
+python_bridge/detection_log.csv
+python_bridge/debug_*.jpg
+*.mp4
+*.MP4
+
+# ── macOS ───────────────────────────────
+.DS_Store
+Thumbs.db
+._*
+
+# ── Unity ───────────────────────────────
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+UserSettings/
+MemoryCaptures/
+sysinfo.txt
+*.apk
+*.aab
+*.unitypackage
+*.app
+crashlytics-build.properties
+
+# Visual Studio / Rider 관련
+.vs/
+.vscode/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.pidb
+*.booproj
+.idea/
+
+# ── 민감 정보 ──
+config_local.py
+*.env# Python
 __pycache__/
 *.pyc
 

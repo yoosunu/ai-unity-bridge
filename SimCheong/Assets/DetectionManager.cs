@@ -62,6 +62,7 @@ public class DetectionData
     public float z;
     public float box_width;
     public float box_height;
+    public bool is_static;
 }
 
 [System.Serializable]

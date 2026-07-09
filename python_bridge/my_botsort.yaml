@@ -1,0 +1,14 @@
+tracker_type: botsort
+track_high_thresh: 0.15
+track_low_thresh: 0.05
+new_track_thresh: 0.2
+track_buffer: 30
+match_thresh: 0.8
+fuse_score: True
+
+# BoT-SORT 고유 옵션 - ReID 활성화
+gmc_method: sparseOptFlow
+proximity_thresh: 0.5
+appearance_thresh: 0.25
+with_reid: True
+model: auto # YOLO와 같은 backbone 기반 경량 ReID 모델 자동 사용

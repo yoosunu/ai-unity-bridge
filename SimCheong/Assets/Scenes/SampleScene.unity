@@ -185,7 +185,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: 96dcf14f2254345339645345ae2dcb14, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -227,7 +227,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 5, y: 1, z: 200}
+  m_LocalScale: {x: 2, y: 1, z: 200}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -261,7 +261,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 45c74e1433b1e4d1eb9991b23c8a0038, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VirtualWalker
-  walkSpeed: 2.7
+  walkSpeed: 0.5
 --- !u!4 &684670204
 Transform:
   m_ObjectHideFlags: 0
@@ -467,23 +467,44 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PrefabManager
   entries:
   - label: Bike
-    prefab: {fileID: 5693272528972521659, guid: 3620d0cd6a4774b67a310ea38e25a30b, type: 3}
+    prefab: {fileID: 7203455061591953914, guid: 3620d0cd6a4774b67a310ea38e25a30b, type: 3}
+    groundOffset: 0
   - label: Bollard
-    prefab: {fileID: 2720828022150906749, guid: 392c6cc41865947e4b5db7f2a01b59bc, type: 3}
+    prefab: {fileID: 6739891524483687623, guid: 392c6cc41865947e4b5db7f2a01b59bc, type: 3}
+    groundOffset: 0
   - label: Car
-    prefab: {fileID: 3227188899607573012, guid: 1febb6911794d44dab3cacb59af8e25d, type: 3}
+    prefab: {fileID: 8139392564525203918, guid: 1febb6911794d44dab3cacb59af8e25d, type: 3}
+    groundOffset: 0
   - label: Curb
-    prefab: {fileID: 7242089936835703010, guid: 9e0061abb1fa4439b840e4dd9ece9dcf, type: 3}
+    prefab: {fileID: 6421389226822227734, guid: 9e0061abb1fa4439b840e4dd9ece9dcf, type: 3}
+    groundOffset: 0
   - label: Hole
-    prefab: {fileID: 6258085679974012651, guid: 2fed1193810b54b90bffcd2f748465b3, type: 3}
+    prefab: {fileID: 4357944270342590418, guid: 2fed1193810b54b90bffcd2f748465b3, type: 3}
+    groundOffset: 0
   - label: Kickboard
-    prefab: {fileID: 2706210968118904516, guid: 9319f16c555ca46ec850e3f7c937495c, type: 3}
+    prefab: {fileID: 7878612651537041703, guid: 9319f16c555ca46ec850e3f7c937495c, type: 3}
+    groundOffset: 0
   - label: Person
-    prefab: {fileID: 4018158442531806248, guid: 0f043b3f948c948078ee39bdaf770379, type: 3}
+    prefab: {fileID: 3253741657956127238, guid: 0f043b3f948c948078ee39bdaf770379, type: 3}
+    groundOffset: 0
   - label: Pillar
-    prefab: {fileID: 6264333150791616599, guid: 26f67d67c665c404192cf371ea27fc69, type: 3}
+    prefab: {fileID: 3295298173906589785, guid: 26f67d67c665c404192cf371ea27fc69, type: 3}
+    groundOffset: 0
   - label: Stairs
-    prefab: {fileID: 1258486244521927517, guid: 74e39f9966c5849a182360585cab0e14, type: 3}
+    prefab: {fileID: 6981815691491851305, guid: 74e39f9966c5849a182360585cab0e14, type: 3}
+    groundOffset: 0
+  - label: Animal
+    prefab: {fileID: 4904959305659185920, guid: 888e3eaefd8ba452fa8402dec01a95b5, type: 3}
+    groundOffset: 0
+  - label: Obstacle
+    prefab: {fileID: 287412880402465155, guid: cb6599359f5c4417a9ecf2dc6ce06c5d, type: 3}
+    groundOffset: 0
+  - label: Sign
+    prefab: {fileID: 3169863395092538565, guid: 85a265a2e6abd4afd9b7f37aab100253, type: 3}
+    groundOffset: 0
+  - label: TrafficLight
+    prefab: {fileID: 6577332519951988665, guid: 0cff28680b9d24c5fa89362916191cc3, type: 3}
+    groundOffset: 0
 --- !u!114 &1346446306
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -499,6 +520,9 @@ MonoBehaviour:
   prefabManager: {fileID: 1346446305}
   virtualWalker: {fileID: 684670203}
   freezeTimeout: 0.3
+  frozenAlpha: 0.5
+  movementThreshold: 0.15
+  autoFreezeAfterStableTime: 2
 --- !u!114 &1346446307
 MonoBehaviour:
   m_ObjectHideFlags: 0
