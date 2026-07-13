@@ -261,7 +261,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 45c74e1433b1e4d1eb9991b23c8a0038, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VirtualWalker
-  walkSpeed: 0.5
+  walkSpeed: 0
 --- !u!4 &684670204
 Transform:
   m_ObjectHideFlags: 0
