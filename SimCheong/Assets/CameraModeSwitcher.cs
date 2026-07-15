@@ -5,6 +5,8 @@ public class CameraModeSwitcher : MonoBehaviour
 {
     [SerializeField] private Camera povCamera;
     [SerializeField] private Camera topViewCamera;
+    [SerializeField] private MonoBehaviour povCameraFollow;   // PovCameraFollow 컴포넌트
+    [SerializeField] private MonoBehaviour topViewController; // TopViewController 컴포넌트
 
     private ArcGISCameraComponent povArcGISCamera;
     private ArcGISCameraComponent topViewArcGISCamera;
@@ -26,31 +28,25 @@ public class CameraModeSwitcher : MonoBehaviour
     {
         if (Input.GetKeyDown(KeyCode.Tab))
         {
-            SyncPosition();
             isTopView = !isTopView;
             SetView(isTopView);
         }
     }
 
-    private void SyncPosition()
-    {
-        Transform from = isTopView ? topViewCamera.transform : povCamera.transform;
-        Transform to = isTopView ? povCamera.transform : topViewCamera.transform;
-
-        Vector3 pos = to.position;
-        pos.x = from.position.x;
-        pos.z = from.position.z;
-        to.position = pos;
-    }
+    [SerializeField] private VirtualWalker virtualWalker; // Player의 이동 스크립트
 
     private void SetView(bool topView)
     {
         povCamera.enabled = !topView;
         topViewCamera.enabled = topView;
 
-        // 핵심 추가: ArcGISCameraComponent도 같이 켜고 끄기
         if (povArcGISCamera != null) povArcGISCamera.enabled = !topView;
         if (topViewArcGISCamera != null) topViewArcGISCamera.enabled = topView;
+
+        if (topViewController != null) topViewController.enabled = topView;
+
+        // 핵심 추가: TopView 볼 때는 Player 이동 꺼버리기
+        if (virtualWalker != null) virtualWalker.enabled = !topView;
 
         var povListener = povCamera.GetComponent<AudioListener>();
         var topListener = topViewCamera.GetComponent<AudioListener>();

@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from typing import Dict
 
 # ────────────────────────────────
-PLATFORM = "mac"
-# PLATFORM = "windows"
+# PLATFORM = "mac"
+PLATFORM = "windows"
 # ────────────────────────────────
 
 

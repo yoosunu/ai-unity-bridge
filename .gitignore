@@ -97,3 +97,6 @@ python_bridge/test_videos/
 *.mp4
 *.MP4
 ._*
+
+
+*.tgz

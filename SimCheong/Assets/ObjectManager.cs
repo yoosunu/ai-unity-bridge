@@ -94,7 +94,7 @@ public class ObjectManager : MonoBehaviour
         Vector3 worldPos = ComputeWorldPos(detection);
         Debug.Log($"[ObjectManager] Creating {detection.label} at worldPos={worldPos}");
         GameObject instance = Instantiate(prefab, worldPos, Quaternion.identity);
-        instance.layer = LayerMask.NameToLayer("HazardObjects");
+        SetLayerRecursively(instance, LayerMask.NameToLayer("HazardObjects"));
         instance.name = $"{detection.label}_{detection.id}";
 
         Vector3 originalScale = instance.transform.localScale;
@@ -230,11 +230,48 @@ public class ObjectManager : MonoBehaviour
         Renderer renderer = instance.GetComponentInChildren<Renderer>();
         if (renderer == null) return;
 
-        Color color = renderer.material.color;
-        color.a = alpha;
-        renderer.material.color = color;
+        Material material = renderer.material; // 인스턴스화된 머티리얼
 
-        // 반투명 렌더링을 위해 머티리얼을 Transparent 모드로 전환해야 실제로 alpha가 보임
-        // (Standard/URP-Lit 셰이더 기준, 필요시 셰이더별로 다르게 처리)
+        if (alpha < 1f)
+        {
+            SetMaterialTransparent(material);
+        }
+        else
+        {
+            SetMaterialOpaque(material);
+        }
+
+        Color color = material.color;
+        color.a = alpha;
+        material.color = color;
+    }
+
+    private void SetMaterialTransparent(Material material)
+    {
+        material.SetFloat("_Surface", 1f);
+        material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        material.SetInt("_ZWrite", 0);
+        material.DisableKeyword("_SURFACE_TYPE_OPAQUE");
+        material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+    }
+
+    private void SetMaterialOpaque(Material material)
+    {
+        material.SetFloat("_Surface", 0f);
+        material.SetInt("_ZWrite", 1);
+        material.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        material.EnableKeyword("_SURFACE_TYPE_OPAQUE");
+        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
+    }
+
+    private void SetLayerRecursively(GameObject obj, int layer)
+    {
+        obj.layer = layer;
+        foreach (Transform child in obj.transform)
+        {
+            SetLayerRecursively(child.gameObject, layer);
+        }
     }
 }

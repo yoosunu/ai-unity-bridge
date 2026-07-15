@@ -1,17 +1,55 @@
 using UnityEngine;
 
 /// <summary>
-/// 실제 카메라 추적(ARKit) 없이, "사용자가 일정 속도로 똑바로 걷고 있다"고
-/// 가정한 가상의 기준점. 이 Transform을 기준으로 detection의 상대 좌표를
-/// 절대(월드) 좌표로 변환함
+/// 실제 사용자(플레이어/클라이언트)의 이동을 담당한다.
+/// ObjectManager는 이 오브젝트의 Transform을 기준으로 탐지 객체의 절대 좌표를 계산한다.
 /// </summary>
 public class VirtualWalker : MonoBehaviour
 {
-    [Tooltip("초당 전진 속도 (Unity 단위). 실제 보행 속도와 x,z 스케일에 맞춰 조정 필요")]
-    [SerializeField] private float walkSpeed = 1.2f;
+    [Header("이동")]
+    [SerializeField] private float moveSpeed = 1.5f;       // 기본 속도 (m/s)
+    [SerializeField] private float sprintMultiplier = 2.5f; // Shift 눌렀을 때 배속
+
+    [Header("회전 (방향키)")]
+    [SerializeField] private float turnSpeed = 60f;
+
+    private float yaw;
+
+    void Start()
+    {
+        yaw = transform.eulerAngles.y;
+    }
 
     void Update()
     {
-        transform.position += transform.forward * walkSpeed * Time.deltaTime;
+        HandleLook();
+        HandleMove();
+    }
+
+    private void HandleLook()
+    {
+        float turnInput = 0f;
+        if (Input.GetKey(KeyCode.LeftArrow)) turnInput -= 1f;
+        if (Input.GetKey(KeyCode.RightArrow)) turnInput += 1f;
+
+        yaw += turnInput * turnSpeed * Time.deltaTime;
+        transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+    }
+
+    private void HandleMove()
+    {
+        Vector3 inputDir = Vector3.zero;
+        if (Input.GetKey(KeyCode.W)) inputDir += transform.forward;
+        if (Input.GetKey(KeyCode.S)) inputDir -= transform.forward;
+        if (Input.GetKey(KeyCode.D)) inputDir += transform.right;
+        if (Input.GetKey(KeyCode.A)) inputDir -= transform.right;
+
+        if (inputDir.sqrMagnitude < 0.01f)
+        {
+            return; // 입력 없으면 즉시 정지, 관성 없음
+        }
+
+        float speed = moveSpeed * (Input.GetKey(KeyCode.LeftShift) ? sprintMultiplier : 1f);
+        transform.position += inputDir.normalized * speed * Time.deltaTime;
     }
 }
