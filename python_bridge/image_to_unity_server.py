@@ -9,7 +9,7 @@ from PIL import Image
 from config import CONFIG
 
 DEBUG_VISUALIZE = True
-IMAGE_PATH = "test_images/test5.jpg"
+IMAGE_PATH = "python_bridge/test_images/test5.jpg"
 
 device = CONFIG.model.device
 

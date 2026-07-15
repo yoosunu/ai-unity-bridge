@@ -24,6 +24,7 @@ public class ObjectManager : MonoBehaviour
     [SerializeField] private float autoFreezeAfterStableTime = 2.0f;
 
     private DetectionManager detectionManager;
+    private int groundLayerMask;
 
     private class Track
     {
@@ -42,11 +43,15 @@ public class ObjectManager : MonoBehaviour
     void Awake()
     {
         detectionManager = GetComponent<DetectionManager>();
+        // "HazardObjects" 레이어를 제외한 모든 레이어에 대해서만 레이캐스트
+        int hazardLayer = LayerMask.NameToLayer("HazardObjects");
+        groundLayerMask = ~(1 << hazardLayer); // 비트 반전으로 "이 레이어 빼고 전부"
     }
 
     void Update()
     {
         DetectionData[] detections = detectionManager.LatestDetections;
+        Debug.Log($"[ObjectManager] LatestDetections: {(detections == null ? "null" : detections.Length.ToString())}");
 
         if (detections != null)
         {
@@ -87,7 +92,9 @@ public class ObjectManager : MonoBehaviour
         }
 
         Vector3 worldPos = ComputeWorldPos(detection);
+        Debug.Log($"[ObjectManager] Creating {detection.label} at worldPos={worldPos}");
         GameObject instance = Instantiate(prefab, worldPos, Quaternion.identity);
+        instance.layer = LayerMask.NameToLayer("HazardObjects");
         instance.name = $"{detection.label}_{detection.id}";
 
         Vector3 originalScale = instance.transform.localScale;
@@ -148,21 +155,35 @@ public class ObjectManager : MonoBehaviour
              + virtualWalker.transform.forward * detection.z;
     }
 
+    private float FindGroundHeight(float worldX, float worldZ, float searchStartHeight)
+    {
+        Vector3 rayStart = new Vector3(worldX, searchStartHeight, worldZ);
+        bool hitSomething = Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, searchStartHeight * 2f, groundLayerMask);
+
+        Debug.Log($"[FindGroundHeight] rayStart={rayStart}, hit={hitSomething}, hitPoint={(hitSomething ? hit.point.ToString() : "N/A")}, hitObject={(hitSomething ? hit.collider.gameObject.name : "N/A")}");
+
+        if (hitSomething)
+        {
+            return hit.point.y;
+        }
+        return 0f;
+    }
+
     private void ApplyScaleAndGrounding(Track track, DetectionData detection, string label)
     {
         track.instance.transform.localScale = track.originalScale;
 
         Renderer renderer = track.instance.GetComponentInChildren<Renderer>();
-        if (renderer != null)
-        {
-            float halfHeight = renderer.bounds.extents.y;
-            float offset = prefabManager.GetGroundOffset(label);
-            Vector3 pos = track.instance.transform.position;
-            pos.y = halfHeight + offset; // offset은 보통 음수로 넣어서 아래로 내림
-            track.instance.transform.position = pos;
-        }
-    }
+        float halfHeight = renderer != null ? renderer.bounds.extents.y : 0f;
 
+        Vector3 pos = track.instance.transform.position;
+        float searchStart = virtualWalker.transform.position.y + 200f; // 충분히 높은 지점에서 아래로 쏨
+        float groundY = FindGroundHeight(pos.x, pos.z, searchStart);
+
+        pos.y = groundY + halfHeight;
+        track.instance.transform.position = pos;
+    }
+    
     private TextMesh CreateLabel(GameObject parent, string text)
     {
         GameObject labelObj = new GameObject("Label");

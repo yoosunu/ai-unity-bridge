@@ -19,7 +19,7 @@ class NetworkConfig:
 
 @dataclass(frozen=True)
 class ModelConfig:
-    model_path: str = "models/yolo26n_custom.pt"
+    model_path: str = "python_bridge/models/yolo26n_custom.pt"
     device: str = "mps" if PLATFORM == "mac" else "cuda"
     infer_size: int = 1280
 
@@ -47,7 +47,7 @@ class ModelConfig:
 # test3
 @dataclass(frozen=True)
 class VideoConfig:
-    video_path: str = "test_videos/test3.mov"
+    video_path: str = "python_bridge/test_videos/test3.mov"
     crop_top: int = 0
     crop_bottom: int = 1920  # 회전 후 기준 세로 길이
     start_msec: int = 20000
