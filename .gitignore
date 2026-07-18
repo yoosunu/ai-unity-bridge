@@ -100,3 +100,6 @@ python_bridge/test_videos/
 
 
 *.tgz
+SimCheong/Assets/_Recovery/
+python_bridge/test_outputs/
+SimCheong/Assets/_Recovery.meta

@@ -1,13 +1,13 @@
 """
-WalkGuide ai-unity-bridge 전역 설정.
+Simcheong_ai-unity-bridge 전역 설정.
 """
 
 from dataclasses import dataclass, field
 from typing import Dict
 
 # ────────────────────────────────
-# PLATFORM = "mac"
-PLATFORM = "windows"
+PLATFORM = "mac"
+# PLATFORM = "windows"
 # ────────────────────────────────
 
 
@@ -27,7 +27,7 @@ class ModelConfig:
 # test1
 # @dataclass(frozen=True)
 # class VideoConfig:
-#     video_path: str = "test_videos/test.mp4"
+#     video_path: str = "python_bridge/test_videos/test.mp4"
 #     crop_top: int = 200
 #     crop_bottom: int = 1900
 #     start_msec: int = 60000
@@ -37,21 +37,25 @@ class ModelConfig:
 # test2
 # @dataclass(frozen=True)
 # class VideoConfig:
-#     video_path: str = "test_videos/test2.mp4"
+#     video_path: str = "python_bridge/test_videos/test2.mp4"
 #     crop_top: int = 0
 #     crop_bottom: int = 1080
 #     start_msec: int = 0
 #     rotate: bool = False  # test2.mp4는 회전 불필요
 
 
-# test3
+# test5
 @dataclass(frozen=True)
 class VideoConfig:
-    video_path: str = "python_bridge/test_videos/test3.mov"
+    video_path: str = (
+        "python_bridge/test_videos/test5.mp4"  # 실제 저장 경로/파일명 확인
+    )
     crop_top: int = 0
-    crop_bottom: int = 1920  # 회전 후 기준 세로 길이
-    start_msec: int = 20000
-    rotate: bool = True  # 회전 필요 여부 - 새로 추가
+    crop_bottom: int = 1920  # 원본 높이 그대로, 크롭 불필요
+    start_msec: int = (
+        5000  # 처음부터 (천천히 일직선으로 걷는 영상이니 처음부터 보는 게 좋을 것 같아요)
+    )
+    rotate: bool = False  # 회전 메타데이터 문제 없음, 그대로 사용
 
 
 @dataclass(frozen=True)
@@ -68,16 +72,17 @@ class TrackingConfig:
 class CoordinateConfig:
     unity_x_range: float = 8.0
     z_near: float = 1.0
-    z_far: float = 20.0  # depth 모델의 실제 스케일에 맞춰 상향
+    z_far: float = 8.0
+    horizontal_fov_deg: float = 70.0
 
 
 @dataclass(frozen=True)
 class DecisionEngineConfig:
     class_conf_threshold: Dict[str, float] = field(
         default_factory=lambda: {
-            "Person": 0.3,
-            "Car": 0.35,
-            "Bollard": 0.4,
+            "Person": 0.5,
+            "Car": 0.5,
+            "Bollard": 0.5,
             "Curb": 0.4,
             "Kickboard": 0.3,
             "Pillar": 0.25,
@@ -89,8 +94,8 @@ class DecisionEngineConfig:
             "Obstacle": 0.3,
         }
     )
-    default_conf_threshold: float = 0.3
-    max_relevant_z: float = 40.0
+    default_conf_threshold: float = 0.2
+    max_relevant_z: float = 8.0  # 30 -> 8
 
     static_labels: tuple = (
         "Bollard",
@@ -101,13 +106,30 @@ class DecisionEngineConfig:
         "TrafficLight",
         "Sign",
         "Obstacle",
+        "Car",
+        "Person",
     )
-    # Animal은 넣지 않음 - 개는 움직이는 존재라 동적으로 취급
 
     dynamic_hit_window: int = 5
     dynamic_min_hit_count: int = 2
     static_hit_window: int = 3
     static_min_hit_count: int = 1
+
+
+@dataclass(frozen=True)
+class DepthCalibrationConfig:
+    enabled: bool = True
+
+    # 근거리용 (1~5m 볼라드 15장 기준)
+    near_slope: float = 0.5117074911
+    near_intercept: float = -0.8900003473
+    near_far_boundary: float = 20.0  # 이 raw_depth 미만이면 근거리 식 사용
+
+    # 중거리용 (7~18m 차량 실측 기준)
+    far_slope: float = 0.7633
+    far_intercept: float = -11.7896
+
+    raw_saturation_threshold: float = 65.0  # 이 이상이면 "모름"으로 간주, 제외
 
 
 @dataclass(frozen=True)
@@ -118,6 +140,9 @@ class AppConfig:
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     coordinate: CoordinateConfig = field(default_factory=CoordinateConfig)
     decision: DecisionEngineConfig = field(default_factory=DecisionEngineConfig)
+    depth_calibration: DepthCalibrationConfig = field(
+        default_factory=DepthCalibrationConfig
+    )
 
 
 CONFIG = AppConfig()

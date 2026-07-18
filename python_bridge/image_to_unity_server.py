@@ -2,14 +2,16 @@ import socket
 import json
 import cv2
 import numpy as np
-import torch
+
+# import torch
 from ultralytics import YOLO
 from transformers import pipeline
 from PIL import Image
+import math
 from config import CONFIG
 
 DEBUG_VISUALIZE = True
-IMAGE_PATH = "python_bridge/test_images/test5.jpg"
+IMAGE_PATH = "python_bridge/test_images/test6.jpg"
 
 device = CONFIG.model.device
 
@@ -17,6 +19,7 @@ stock_model = YOLO("yolo26n.pt")
 stock_model.to(device)
 custom_model = YOLO(CONFIG.model.model_path)
 custom_model.to(device)
+
 
 depth_pipe = pipeline(
     task="depth-estimation",
@@ -62,6 +65,13 @@ if depth_map.shape != (image_height, image_width):
     depth_map = cv2.resize(depth_map, (image_width, image_height))
 
 
+def pixel_x_to_world_x(pixel_x, image_width, forward_depth, horizontal_fov_deg):
+    normalized_x = (pixel_x - image_width / 2) / (image_width / 2)
+    half_fov_rad = math.radians(horizontal_fov_deg / 2)
+    theta = math.atan(normalized_x * math.tan(half_fov_rad))
+    return forward_depth * math.tan(theta)
+
+
 def get_depth_at(x, y, depth_map):
     xi = int(np.clip(x, 0, depth_map.shape[1] - 1))
     yi = int(np.clip(y, 0, depth_map.shape[0] - 1))
@@ -91,6 +101,20 @@ def get_depth_for_bbox(x1, y1, x2, y2, depth_map):
     region = depth_map[yi1:yi2, xi1:xi2]
     # 하위 10% percentile 정도를 써서, 노이즈 픽셀 한두 개에 흔들리지 않게
     return float(np.percentile(region, 10))
+
+
+def calibrate_p10_depth(raw_depth: float) -> float:
+    if not CONFIG.depth_calibration.enabled:
+        return raw_depth
+
+    if raw_depth < 20.0:
+        # 근거리용 (1~5m 볼라드 데이터 기반)
+        corrected = 0.5117074911 * raw_depth - 0.8900003473
+    else:
+        # 중거리용 (7~18m 차량 실측 기반)
+        corrected = 0.7633 * raw_depth - 11.7896
+
+    return max(0.0, corrected)
 
 
 def extract_items(result, label_map=None):
@@ -145,8 +169,36 @@ for i, (label, conf, x1, y1, x2, y2, source) in enumerate(all_items):
     center_x = (x1 + x2) / 2
     bottom_y = y2
 
-    unity_z = round(get_depth_for_bbox(x1, y1, x2, y2, depth_map), 2)
-    unity_x = round((center_x / image_width - 0.5) * CONFIG.coordinate.unity_x_range, 2)
+    raw_depth = get_depth_for_bbox(x1, y1, x2, y2, depth_map)
+
+    if raw_depth >= CONFIG.depth_calibration.raw_saturation_threshold:
+        print(f"[DEPTH] {label}: raw={raw_depth:.2f}m -> 포화 구간, 신뢰 불가로 제외")
+        continue  # 이 detection 자체를 스킵
+    corrected_depth = calibrate_p10_depth(raw_depth)
+    unity_z = round(corrected_depth, 2)
+
+    print(f"[DEPTH] {label}: raw={raw_depth:.2f}m, corrected={corrected_depth:.2f}m")
+
+    # TODO: 현재는 화면 위치를 고정 범위에 선형 매핑 중이라, 같은 화면 위치면
+    # 거리(z)와 무관하게 x가 동일하게 나오는 문제가 있음.
+    # DAV2 출력이 camera-space z-depth인지 ray distance인지 확정되면,
+    # 아래 방식(FOV+거리 기반 삼각법)으로 교체 예정:
+    #
+    # def pixel_x_to_world_x(pixel_x, image_width, forward_depth, horizontal_fov_deg):
+    #     normalized_x = (pixel_x - image_width / 2) / (image_width / 2)
+    #     half_fov_rad = math.radians(horizontal_fov_deg / 2)
+    #     theta = math.atan(normalized_x * math.tan(half_fov_rad))
+    #     return forward_depth * math.tan(theta)
+
+    unity_x = round(
+        pixel_x_to_world_x(
+            pixel_x=center_x,
+            image_width=image_width,
+            forward_depth=corrected_depth,  # 보정된 z값 사용
+            horizontal_fov_deg=CONFIG.coordinate.horizontal_fov_deg,
+        ),
+        2,
+    )
 
     # --- 디버그: 이 항목이 왜 통과/필터링됐는지 ---
     print(
@@ -187,6 +239,8 @@ for i, (label, conf, x1, y1, x2, y2, source) in enumerate(all_items):
             "confidence": round(conf, 3),
             "x": unity_x,
             "z": unity_z,
+            "raw_z": round(raw_depth, 2),  # 디버깅용, 검증 끝나면 제거
+            "corrected_z": round(corrected_depth, 2),  # 디버깅용, 검증 끝나면 제거
             "box_width": round(x2 - x1, 1),
             "box_height": round(y2 - y1, 1),
             "is_static": label in CONFIG.decision.static_labels,

@@ -2,8 +2,10 @@ using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Sockets;
+using System.Text; 
 using System.Threading;
 using UnityEngine;
+
 
 /// <summary>
 /// TCP 소켓 연결과 원시 문자열 수신만 담당
@@ -95,5 +97,22 @@ public class SocketReceiver : MonoBehaviour
     void OnApplicationQuit()
     {
         Cleanup();
+    }
+
+    public void SendStartSignal()
+    {
+        if (client != null && client.Connected)
+        {
+            try
+            {
+                byte[] data = Encoding.UTF8.GetBytes("START\n");
+                client.GetStream().Write(data, 0, data.Length);
+                Debug.Log("[SocketReceiver] START 신호 전송");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[SocketReceiver] 시작 신호 전송 실패: {e.Message}");
+            }
+        }
     }
 }

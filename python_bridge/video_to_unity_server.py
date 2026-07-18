@@ -1,8 +1,12 @@
+import os
+
+os.environ["HF_HUB_OFFLINE"] = "1"
+
 import socket
 import json
 import cv2
 import numpy as np
-import torch
+import math
 from collections import defaultdict, deque, Counter
 from ultralytics import YOLO
 from transformers import pipeline
@@ -13,8 +17,9 @@ if CONFIG.tracking.use_deepsort:
     from deep_sort_realtime.deepsort_tracker import DeepSort
 
 DEBUG_VISUALIZE = True
+DEBUG_VISUALIZE_INTERVAL = 5
 
-device = CONFIG.model.device  # 하드코딩 대신 config 값 사용 (mac=mps, windows=cuda)
+device = CONFIG.model.device
 
 stock_model = YOLO("yolo26n.pt")
 stock_model.to(device)
@@ -45,7 +50,6 @@ STOCK_LABEL_MAP = {
 CUSTOM_MODEL_FRAME_INTERVAL = 5
 DEPTH_FRAME_INTERVAL = 5
 
-# DeepSort는 stock/custom 각각 별도 tracker 인스턴스가 필요함 (내부 상태를 라벨 구분 없이 관리하므로)
 stock_deepsort = (
     DeepSort(max_age=CONFIG.tracking.max_age, n_init=CONFIG.tracking.n_init)
     if CONFIG.tracking.use_deepsort
@@ -65,7 +69,14 @@ print(
     f"[{'DeepSort' if CONFIG.tracking.use_deepsort else 'ByteTrack'}] Waiting for Unity client..."
 )
 conn, addr = server.accept()
+
 print("Connected:", addr)
+print("Unity에서 Space를 눌러 시작 신호를 보낼 때까지 대기 중...")
+
+conn.settimeout(None)
+start_signal = conn.recv(1024)
+print(f"시작 신호 수신: {start_signal}")
+print("영상 처리를 시작합니다.")
 
 cap = cv2.VideoCapture(CONFIG.video.video_path)
 cap.set(cv2.CAP_PROP_POS_MSEC, CONFIG.video.start_msec)
@@ -109,6 +120,35 @@ def get_depth_for_bbox(x1, y1, x2, y2, depth_map):
     return float(np.percentile(region, 10))
 
 
+def calibrate_p10_depth(raw_depth: float) -> float:
+    """
+    구간별 선형 보정 (근거리: 1~5m 볼라드 기준 / 중거리: 7~18m 차량 실측 기준).
+    raw_depth가 near_far_boundary 미만이면 근거리 식, 이상이면 중거리 식을 사용한다.
+    """
+    if not CONFIG.depth_calibration.enabled:
+        return raw_depth
+
+    if raw_depth < CONFIG.depth_calibration.near_far_boundary:
+        corrected = (
+            CONFIG.depth_calibration.near_slope * raw_depth
+            + CONFIG.depth_calibration.near_intercept
+        )
+    else:
+        corrected = (
+            CONFIG.depth_calibration.far_slope * raw_depth
+            + CONFIG.depth_calibration.far_intercept
+        )
+
+    return max(0.0, corrected)
+
+
+def pixel_x_to_world_x(pixel_x, image_width, forward_depth, horizontal_fov_deg):
+    normalized_x = (pixel_x - image_width / 2) / (image_width / 2)
+    half_fov_rad = math.radians(horizontal_fov_deg / 2)
+    theta = math.atan(normalized_x * math.tan(half_fov_rad))
+    return forward_depth * math.tan(theta)
+
+
 def compute_depth_map(frame_bgr):
     frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
     pil_image = Image.fromarray(frame_rgb)
@@ -120,7 +160,6 @@ def compute_depth_map(frame_bgr):
 
 
 def extract_items_bytetrack(result, label_map=None, offset=0):
-    """ByteTrack(model.track) 결과에서 (track_id, label, conf, x1,y1,x2,y2) 추출"""
     items = []
     if result.boxes is not None and result.boxes.id is not None:
         track_ids = result.boxes.id.tolist()
@@ -137,12 +176,10 @@ def extract_items_bytetrack(result, label_map=None, offset=0):
 
 
 def extract_items_deepsort(frame, model, deepsort_tracker, label_map=None, offset=0):
-    """DeepSort 경로: predict()로 detection 후 DeepSort에 넘겨 추적"""
     results = model.predict(frame, imgsz=CONFIG.model.infer_size, verbose=False)
     result = results[0]
 
     raw_detections = []
-    raw_labels = []
     if result.boxes is not None:
         for box in result.boxes:
             cls_id = int(box.cls[0])
@@ -153,7 +190,6 @@ def extract_items_deepsort(frame, model, deepsort_tracker, label_map=None, offse
             conf = float(box.conf[0])
             x1, y1, x2, y2 = box.xyxy[0].tolist()
             raw_detections.append(([x1, y1, x2 - x1, y2 - y1], conf, label))
-            raw_labels.append(label)
 
     tracks = deepsort_tracker.update_tracks(raw_detections, frame=frame)
 
@@ -174,12 +210,18 @@ def extract_items_deepsort(frame, model, deepsort_tracker, label_map=None, offse
     return items
 
 
+FRAME_SKIP = 10
+
 frame_idx = 0
 
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
         break
+
+    frame_idx += 1
+    if frame_idx % FRAME_SKIP != 0:
+        continue  # 추론 자체를 안 함 - 이게 진짜 속도를 줄여줌
 
     if CONFIG.video.rotate:
         frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
@@ -196,7 +238,6 @@ while cap.isOpened():
 
     tracked_items = []
 
-    # --- stock 모델 (매 프레임) ---
     if CONFIG.tracking.use_deepsort:
         stock_items = extract_items_deepsort(
             cropped, stock_model, stock_deepsort, label_map=STOCK_LABEL_MAP
@@ -205,7 +246,7 @@ while cap.isOpened():
         stock_results = stock_model.track(
             cropped,
             persist=True,
-            tracker="my_bytetrack.yaml",
+            tracker="python_bridge/my_bytetrack.yaml",
             imgsz=CONFIG.model.infer_size,
             verbose=False,
         )
@@ -217,7 +258,6 @@ while cap.isOpened():
         for tid, lbl, c, x1, y1, x2, y2 in stock_items
     ]
 
-    # --- custom 모델 (주기적으로) ---
     if frame_idx % CUSTOM_MODEL_FRAME_INTERVAL == 0:
         if CONFIG.tracking.use_deepsort:
             custom_items = extract_items_deepsort(
@@ -227,7 +267,7 @@ while cap.isOpened():
             custom_results = custom_model.track(
                 cropped,
                 persist=True,
-                tracker="my_bytetrack.yaml",
+                tracker="python_bridge/my_bytetrack.yaml",
                 imgsz=CONFIG.model.infer_size,
                 verbose=False,
             )
@@ -254,9 +294,32 @@ while cap.isOpened():
         )
         passed = hits >= min_hits
 
-        unity_z = round(get_depth_for_bbox(x1, y1, x2, y2, cached_depth_map), 2)
+        raw_depth = get_depth_for_bbox(x1, y1, x2, y2, cached_depth_map)
+
+        if raw_depth >= CONFIG.depth_calibration.raw_saturation_threshold:
+            # 포화 구간 - 신뢰 불가로 이 프레임의 이 detection은 건너뜀
+            if DEBUG_VISUALIZE:
+                cv2.rectangle(
+                    debug_frame,
+                    (int(x1), int(y1)),
+                    (int(x2), int(y2)),
+                    (128, 128, 128),
+                    1,
+                )
+            continue
+
+        corrected_depth = calibrate_p10_depth(raw_depth)
+        unity_z = round(corrected_depth, 2)
+
+        center_x = (x1 + x2) / 2
         unity_x = round(
-            ((x1 + x2) / 2 / frame_width - 0.5) * CONFIG.coordinate.unity_x_range, 2
+            pixel_x_to_world_x(
+                pixel_x=center_x,
+                image_width=frame_width,
+                forward_depth=corrected_depth,
+                horizontal_fov_deg=CONFIG.coordinate.horizontal_fov_deg,
+            ),
+            2,
         )
 
         if DEBUG_VISUALIZE:
@@ -298,7 +361,7 @@ while cap.isOpened():
             }
         )
 
-    if DEBUG_VISUALIZE:
+    if DEBUG_VISUALIZE and frame_idx % DEBUG_VISUALIZE_INTERVAL == 0:
         cv2.imshow(
             "Debug: Stock(orange) + Custom(green) + Filtered(red) + Depth-Z",
             debug_frame,
