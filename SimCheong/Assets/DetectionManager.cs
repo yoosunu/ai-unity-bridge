@@ -60,6 +60,7 @@ public class DetectionData
     public string label;
     public float x;
     public float z;
+    public float confidence;   // 이 필드가 있는지 확인, 없으면 추가
     public float box_width;
     public float box_height;
     public bool is_static;

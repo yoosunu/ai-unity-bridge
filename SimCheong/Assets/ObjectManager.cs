@@ -31,6 +31,9 @@ public class ObjectManager : MonoBehaviour
     [Header("중복 스폰 방지 (Merge)")]
     [SerializeField] private float mergeDistanceThreshold = 2.0f;
 
+    [Header("공간음향")]
+[SerializeField] private Transform audioListenerTarget; // 비워두면 virtualWalker 사용
+
     private float DistancePerFrame => (assumedWalkSpeedMps / videoFps) * frameSkip;
     private DetectionManager detectionManager;
     private int groundLayerMask;
@@ -122,6 +125,11 @@ public class ObjectManager : MonoBehaviour
         SetLayerRecursively(instance, LayerMask.NameToLayer("HazardObjects"));
         instance.name = $"{detection.label}_{detection.id}";
 
+        // 공간음향 경고 부착
+        ProximityAlert alert = instance.AddComponent<ProximityAlert>();
+        Transform earPosition = audioListenerTarget != null ? audioListenerTarget : virtualWalker.transform;
+        alert.Initialize(earPosition);
+
         Vector3 originalScale = instance.transform.localScale;
 
         Track track = new Track
@@ -136,7 +144,7 @@ public class ObjectManager : MonoBehaviour
         };
 
         ApplyScaleAndGrounding(track, detection, detection.label);
-        track.label = CreateLabel(instance, $"{detection.label} #{detection.id}");
+        track.label = CreateLabel(instance, BuildDebugLabelText(detection));
 
         tracks[detection.id] = track;
     }
@@ -246,18 +254,37 @@ public class ObjectManager : MonoBehaviour
         track.instance.transform.position = pos;
     }
 
+    private string BuildDebugLabelText(DetectionData detection)
+    {
+        return $"{detection.label} #{detection.id}\n" +
+            $"z={detection.z:F1}m conf={detection.confidence:F2}";
+    }
+
+    private Bounds GetCombinedBounds(GameObject obj)
+    {
+        Renderer[] renderers = obj.GetComponentsInChildren<Renderer>();
+        if (renderers.Length == 0) return new Bounds(obj.transform.position, Vector3.zero);
+
+        Bounds combined = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+        {
+            combined.Encapsulate(renderers[i].bounds);
+        }
+        return combined;
+    }
+
     private TextMesh CreateLabel(GameObject parent, string text)
     {
         GameObject labelObj = new GameObject("Label");
         labelObj.transform.SetParent(parent.transform);
 
-        Renderer parentRenderer = parent.GetComponentInChildren<Renderer>();
-        float heightOffset = parentRenderer != null ? parentRenderer.bounds.extents.y + 0.3f : 1f;
+        Bounds combinedBounds = GetCombinedBounds(parent);
+        float heightOffset = Mathf.Min(combinedBounds.extents.y + 0.3f, 2.0f);
         labelObj.transform.localPosition = new Vector3(0, heightOffset, 0);
 
         TextMesh textMesh = labelObj.AddComponent<TextMesh>();
         textMesh.text = text;
-        textMesh.fontSize = 48;
+        textMesh.fontSize = 38;
         textMesh.characterSize = 0.08f;
         textMesh.anchor = TextAnchor.LowerCenter;
         textMesh.alignment = TextAlignment.Center;

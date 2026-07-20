@@ -2,22 +2,25 @@ import os
 
 os.environ["HF_HUB_OFFLINE"] = "1"
 
-import socket
 import json
 import cv2
 import numpy as np
 import math
-from collections import defaultdict, deque, Counter
+from collections import deque, Counter
 from ultralytics import YOLO
 from transformers import pipeline
 from PIL import Image
 from config import CONFIG
+import asyncio
+import threading
+import queue
+import websockets
 
 if CONFIG.tracking.use_deepsort:
     from deep_sort_realtime.deepsort_tracker import DeepSort
 
 DEBUG_VISUALIZE = True
-DEBUG_VISUALIZE_INTERVAL = 5
+DEBUG_VISUALIZE_INTERVAL = 1
 
 device = CONFIG.model.device
 
@@ -61,22 +64,51 @@ custom_deepsort = (
     else None
 )
 
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server.bind((CONFIG.network.host, CONFIG.network.port))
-server.listen(1)
-print(
-    f"[{'DeepSort' if CONFIG.tracking.use_deepsort else 'ByteTrack'}] Waiting for Unity client..."
-)
-conn, addr = server.accept()
+message_queue = queue.Queue()
+incoming_queue = queue.Queue()
+connected_clients = set()
 
-print("Connected:", addr)
+async def _handler(websocket):
+    connected_clients.add(websocket)
+    print("Unity client connected via WebSocket")
+    try:
+        async for message in websocket:
+            incoming_queue.put(message)
+    finally:
+        connected_clients.discard(websocket)
+
+async def _broadcaster():
+    while True:
+        try:
+            msg = message_queue.get_nowait()
+        except queue.Empty:
+            await asyncio.sleep(0.005)
+            continue
+        for ws in list(connected_clients):
+            try:
+                await ws.send(msg)
+            except Exception:
+                connected_clients.discard(ws)
+
+async def _server_main():
+    async with websockets.serve(_handler, "0.0.0.0", CONFIG.network.port):
+        await _broadcaster()
+
+def start_websocket_server():
+    threading.Thread(target=lambda: asyncio.run(_server_main()), daemon=True).start()
+
+start_websocket_server()
+print(f"WebSocket 서버 시작됨 (포트 {CONFIG.network.port}). Unity 접속 대기 중...")
+
 print("Unity에서 Space를 눌러 시작 신호를 보낼 때까지 대기 중...")
-
-conn.settimeout(None)
-start_signal = conn.recv(1024)
-print(f"시작 신호 수신: {start_signal}")
-print("영상 처리를 시작합니다.")
+while True:
+    try:
+        msg = incoming_queue.get(timeout=0.5)
+        if msg.strip() == "START":
+            break
+    except queue.Empty:
+        continue
+print("시작 신호 수신, 영상 처리를 시작합니다.")
 
 cap = cv2.VideoCapture(CONFIG.video.video_path)
 cap.set(cv2.CAP_PROP_POS_MSEC, CONFIG.video.start_msec)
@@ -119,12 +151,8 @@ def get_depth_for_bbox(x1, y1, x2, y2, depth_map):
     region = depth_map[yi1:yi2, xi1:xi2]
     return float(np.percentile(region, 10))
 
-
+"""main"""
 def calibrate_p10_depth(raw_depth: float) -> float:
-    """
-    구간별 선형 보정 (근거리: 1~5m 볼라드 기준 / 중거리: 7~18m 차량 실측 기준).
-    raw_depth가 near_far_boundary 미만이면 근거리 식, 이상이면 중거리 식을 사용한다.
-    """
     if not CONFIG.depth_calibration.enabled:
         return raw_depth
 
@@ -210,7 +238,7 @@ def extract_items_deepsort(frame, model, deepsort_tracker, label_map=None, offse
     return items
 
 
-FRAME_SKIP = 10
+FRAME_SKIP = 1
 
 frame_idx = 0
 
@@ -370,7 +398,7 @@ while cap.isOpened():
             break
 
     message = json.dumps({"objects": detections}) + "\n"
-    conn.sendall(message.encode("utf-8"))
+    message_queue.put(message)
 
     frame_idx += 1
     if frame_idx % 50 == 0:
@@ -379,7 +407,6 @@ while cap.isOpened():
         )
 
 cap.release()
-server.close()
 if DEBUG_VISUALIZE:
     cv2.destroyAllWindows()
 print("완료")

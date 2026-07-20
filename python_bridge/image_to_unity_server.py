@@ -11,7 +11,7 @@ import math
 from config import CONFIG
 
 DEBUG_VISUALIZE = True
-IMAGE_PATH = "python_bridge/test_images/test6.jpg"
+IMAGE_PATH = "python_bridge/test_images/preview.webp"  # 실제 이미지 경로/파일명 확인
 
 device = CONFIG.model.device
 
@@ -107,12 +107,16 @@ def calibrate_p10_depth(raw_depth: float) -> float:
     if not CONFIG.depth_calibration.enabled:
         return raw_depth
 
-    if raw_depth < 20.0:
-        # 근거리용 (1~5m 볼라드 데이터 기반)
-        corrected = 0.5117074911 * raw_depth - 0.8900003473
+    if raw_depth < CONFIG.depth_calibration.near_far_boundary:
+        corrected = (
+            CONFIG.depth_calibration.near_slope * raw_depth
+            + CONFIG.depth_calibration.near_intercept
+        )
     else:
-        # 중거리용 (7~18m 차량 실측 기반)
-        corrected = 0.7633 * raw_depth - 11.7896
+        corrected = (
+            CONFIG.depth_calibration.far_slope * raw_depth
+            + CONFIG.depth_calibration.far_intercept
+        )
 
     return max(0.0, corrected)
 

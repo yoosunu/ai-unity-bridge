@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from typing import Dict
 
 # ────────────────────────────────
-PLATFORM = "mac"
-# PLATFORM = "windows"
+# PLATFORM = "mac"
+PLATFORM = "windows"
 # ────────────────────────────────
 
 
@@ -83,19 +83,19 @@ class DecisionEngineConfig:
             "Person": 0.5,
             "Car": 0.5,
             "Bollard": 0.5,
-            "Curb": 0.4,
-            "Kickboard": 0.3,
-            "Pillar": 0.25,
-            "Bike": 0.25,
-            "Stairs": 0.3,
-            "TrafficLight": 0.3,
-            "Sign": 0.3,
-            "Animal": 0.35,
-            "Obstacle": 0.3,
+            "Curb": 0.5,
+            "Kickboard": 0.5,
+            "Pillar": 0.5,
+            "Bike": 0.5,
+            "Stairs": 0.5,
+            "TrafficLight": 0.5,
+            "Sign": 0.5,
+            "Animal": 0.5,
+            "Obstacle": 0.2,
         }
     )
-    default_conf_threshold: float = 0.2
-    max_relevant_z: float = 8.0  # 30 -> 8
+    default_conf_threshold: float = 0.5
+    max_relevant_z: float = 12.0  # 30 -> 8
 
     static_labels: tuple = (
         "Bollard",
@@ -119,17 +119,12 @@ class DecisionEngineConfig:
 @dataclass(frozen=True)
 class DepthCalibrationConfig:
     enabled: bool = True
-
-    # 근거리용 (1~5m 볼라드 15장 기준)
     near_slope: float = 0.5117074911
     near_intercept: float = -0.8900003473
-    near_far_boundary: float = 20.0  # 이 raw_depth 미만이면 근거리 식 사용
-
-    # 중거리용 (7~18m 차량 실측 기준)
+    near_far_boundary: float = 20.0
     far_slope: float = 0.7633
-    far_intercept: float = -11.7896
-
-    raw_saturation_threshold: float = 65.0  # 이 이상이면 "모름"으로 간주, 제외
+    far_intercept: float = -0.51  # 여기, -11.7896이 아니라 -0.51로
+    raw_saturation_threshold: float = 65.0
 
 
 @dataclass(frozen=True)
